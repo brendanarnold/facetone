@@ -1,1 +1,1 @@
-glob: *.DS_Store
+glob: *DS_Store

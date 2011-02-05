@@ -1,4 +1,4 @@
-import processing.video.*; 
+import hypermedia.video.*;
 import ddf.minim.*;
 import ddf.minim.signals.*;
 
@@ -9,7 +9,7 @@ Node[] nodes;
 int numPixels, i;
 int[] rawPixels;
 int[] edgePixels;
-Capture video;
+
 boolean isCaptured = false;
 float[][] mat = { {  0,  1,  0 },
                    { -1,  0,  1 },
@@ -19,6 +19,7 @@ PImage invSpaceImg;
 float   theta = 0.0;
 int tCaptured;
 
+OpenCV opencv;
 Minim minim;
 AudioOutput out;
 GammaSignal gSig;
@@ -30,9 +31,13 @@ LSignal lSig;
 
 void setup() {
   size(640, 480, P2D);
-  //size(320, 240);
-  frameRate(24);
-  video = new Capture(this, width, height, 10);
+  // Camera stuff
+  opencv = new OpenCV(this);
+  opencv.capture(width, height);
+  // Sound bits
+  minim = new Minim(this);
+  out = minim.getLineOut(Minim.MONO);
+  
   rawPixels = new int[width * height];
   edgePixels = new int[width * height];
   nodes = new Node[NNODES];
@@ -44,26 +49,19 @@ void setup() {
   greek = loadFont("Times-Roman-48.vlw");
   textFont(greek, 25);
   invSpaceImg = createImage(width, height, RGB);
-  
-  // Sound bits
-  minim = new Minim(this);
-  out = minim.getLineOut(Minim.MONO);
+
   
   
 }
 
 void draw() {
-  if (video.available() && !isCaptured) 
+  if (!isCaptured) 
   {
     // Copy video direct to buffer, no need for 3D
-    video.read();
-    video.loadPixels();
-    loadPixels();
-    arrayCopy(video.pixels, pixels);
-    //nodeFilter(EDGE, video.pixels, pixels);
-    updatePixels();
+    opencv.read();
+    image(opencv.image(), 0, 0);
   } 
-  else if (isCaptured) 
+  else
   {
     // Draw the inverse space image
     image(invSpaceImg, 0, 0);
@@ -80,17 +78,23 @@ void draw() {
 
 void keyPressed() {
   if (keyCode == 'X') {
-    video.read();
-    video.loadPixels();
+    // Look for nodes by lowering threshold until 5 nodes are found
+    Blob[] blobs;
+    int thresh = 255;
+    do {
+      opencv.read();
+      opencv.threshold(thresh);
+      blobs = opencv.blobs(100, width * height /3, 5, true);
+      thresh -= 10;
+    } while (blobs.length < 5);
     // Save picture in inverse space to image
     invSpaceImg.loadPixels();
-    nodeFilter(INVERSESPACE, video.pixels, invSpaceImg.pixels);
+    nodeFilter(INVERSESPACE, opencv.image().pixels, invSpaceImg.pixels);
     invSpaceImg.updatePixels();
-    // Save edge filtered image
-    loadPixels();
-    nodeFilter(EDGE, video.pixels, edgePixels);
-    updatePixels();
-    findNodes();
+    for (i=0; i < blobs.length; i++) {
+      nodes[i].x = blobs[i].centroid.x;
+      nodes[i].y = blobs[i].centroid.y;
+    }
     isCaptured = true;
     tCaptured = millis();
     // Now figure out the sound
@@ -125,8 +129,6 @@ void nodeFilter(int type, int[] inPixels, int[] outPixels) {;
         for (int kx=-1; kx <= 1; kx++) {
           int pos = x + kx + (y + ky)*horiz;
           float bw = brightness(inPixels[pos]);
-          if ((type == EDGE) && (bw > 100)) bw = 255;
-          if ((type == EDGE) && (bw <= 100)) bw = 0;
           magnitude += bw * mat[ky+1][kx+1];
         }
       }
@@ -135,41 +137,6 @@ void nodeFilter(int type, int[] inPixels, int[] outPixels) {;
     }
   }
 }
-
-//void findNodes() {
-//  nodes[0].x = 25 ; // K
-//  nodes[0].y = 25;
-//  nodes[1].x = 125;
-//  nodes[1].y = 125;
-//  nodes[2].x = 225;
-//  nodes[2].y = 225;
-//  nodes[3].x = 325;
-//  nodes[3].y = 325;
-//  nodes[4].x = 420; // W
-//  nodes[4].y = 420;
-//}
-
-void findNodes() {
-  int TIMEOUT = 5000;
-  int n = 0;
-  int t = millis();
-  while (n < NNODES) {
-    int rpos = int(random(width, width*height - width));
-    int len = 1;
-    // Look for continuous regions of edge
-    if (brightness(edgePixels[rpos]) < 10) {
-      while (((rpos - len) > 0) && (brightness(edgePixels[rpos - len]) < 10)) len += 1;   
-    }
-    // Also have a tomeout safety net incase there are no continuous regions
-    if ((len > 4) || ((millis() - t) > TIMEOUT)) {
-      nodes[n].x = ((rpos - len) % width);
-      nodes[n].y = int((rpos - len) / width);
-      //println(nodes[n].x + " " + nodes[n].y + " " + " " + len);
-      n += 1;
-    }   
-  } 
-}
-
 
 
 void stop()
