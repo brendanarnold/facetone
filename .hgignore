@@ -1,1 +1,5 @@
 glob: *DS_Store
+glob: application.linux/*
+glob: application.windows/*
+glob: application.macosx/*
+
